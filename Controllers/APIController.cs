@@ -55,5 +55,12 @@ namespace BiometricService.Controllers
         {
             return _biometric.DeviceUniqueSerialID();
         }
+
+        [HttpGet("capture")]
+        public IActionResult Snapshot()
+        {
+            return _biometric.Snapshot();
+        }
+    }
     }
 }

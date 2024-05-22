@@ -194,4 +194,28 @@ public class Biometric
         );
     }
 
+    public IActionResult Snapshot()
+    {
+        APIServiceInstance._NBioAPI.OpenDevice(NBioAPI.Type.DEVICE_ID.AUTO);
+        uint ret = APIServiceInstance._NBioAPI.Capture(NBioAPI.Type.FIR_PURPOSE.VERIFY, out NBioAPI.Type.HFIR hCapturedFIR, NBioAPI.Type.TIMEOUT.DEFAULT, null, null);
+        APIServiceInstance._NBioAPI.CloseDevice(NBioAPI.Type.DEVICE_ID.AUTO);
+        if (ret != NBioAPI.Error.NONE) return new BadRequestObjectResult(
+            new JsonObject
+            {
+                ["message"] = $"Error on Capture: {ret}",
+                ["success"] = false
+            }
+        );
+
+        APIServiceInstance._NBioAPI.GetTextFIRFromHandle(hCapturedFIR, out NBioAPI.Type.FIR_TEXTENCODE textFIR, true);
+
+        return new OkObjectResult(
+            new JsonObject
+            {
+                ["template"] = textFIR.TextFIR,
+                ["success"] = true
+            }
+        );
+    }
+
 }
