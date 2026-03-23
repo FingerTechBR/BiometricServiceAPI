@@ -8,12 +8,24 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>dotnet-BiometricService-c7d8d14c-120e-4583-b733-7856abd5d006</UserSecretsId>
     <ApplicationIcon>icone-finger.ico</ApplicationIcon>
-    <AssemblyVersion>2.4.3.0</AssemblyVersion>
-    <FileVersion>2.4.3.0</FileVersion>
+    <AssemblyVersion>2.4.6.0</AssemblyVersion>
+    <FileVersion>2.4.6.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
     <Content Include="icone-finger.ico" />
+  </ItemGroup>
+
+  <!-- Ensure appsettings files are copied to output and publish folders -->
+  <ItemGroup>
+    <None Include="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </None>
+    <None Include="appsettings.Development.json" Condition="Exists('appsettings.Development.json')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>

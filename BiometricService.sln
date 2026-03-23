@@ -27,8 +27,7 @@ Global
 		{41FC0F61-600D-42A3-9986-B9E153E71E4C}.Debug|Any CPU.Build.0 = Debug
 		{41FC0F61-600D-42A3-9986-B9E153E71E4C}.Debug|Default.ActiveCfg = Debug
 		{41FC0F61-600D-42A3-9986-B9E153E71E4C}.Debug|Default.Build.0 = Debug
-		{41FC0F61-600D-42A3-9986-B9E153E71E4C}.Release|Any CPU.ActiveCfg = Release
-		{41FC0F61-600D-42A3-9986-B9E153E71E4C}.Release|Any CPU.Build.0 = Release
+		{41FC0F61-600D-42A3-9986-B9E153E71E4C}.Release|Any CPU.ActiveCfg = Debug
 		{41FC0F61-600D-42A3-9986-B9E153E71E4C}.Release|Default.ActiveCfg = Release
 		{41FC0F61-600D-42A3-9986-B9E153E71E4C}.Release|Default.Build.0 = Release
 	EndGlobalSection
