@@ -17,6 +17,10 @@ public class Biometric
         HFIR auditHFIR = new HFIR();
         APIServiceInstance._NBioAPI.OpenDevice(NBioAPI.Type.DEVICE_ID.AUTO);
         uint ret = APIServiceInstance._NBioAPI.Capture(NBioAPI.Type.FIR_PURPOSE.ENROLL, out NBioAPI.Type.HFIR hCapturedFIR, NBioAPI.Type.TIMEOUT.DEFAULT, auditHFIR, null);
+
+        APIServiceInstance._NBioAPI.GetFIRFromHandle(auditHFIR, out NBioAPI.Type.FIR auditFIR);
+        int quality = auditFIR.Header.Quality;
+        
         APIServiceInstance._NBioAPI.CloseDevice(NBioAPI.Type.DEVICE_ID.AUTO);
         if (ret != NBioAPI.Error.NONE) return new BadRequestObjectResult(
             new JsonObject
@@ -49,6 +53,7 @@ public class Biometric
         APIServiceInstance._NBioAPI.GetTextFIRFromHandle(hCapturedFIR, out NBioAPI.Type.FIR_TEXTENCODE textFIR, true);
 
         string[] images = new string[10];
+        List<byte> fingers = new List<byte> { };
 
         foreach (NBioAPI.Export.AUDIT_DATA finger in exportAuditData.AuditData)
         {
@@ -56,6 +61,7 @@ public class Biometric
             Directory.CreateDirectory(tempPath);
             File.WriteAllBytes($"{tempPath}\\finger_{finger.FingerID}.jpg", imgData);
             images[finger.FingerID - 1] = Convert.ToBase64String(imgData);
+            fingers.Add(finger.FingerID);
         }
 
         if (!img)
@@ -65,6 +71,8 @@ public class Biometric
                 {
                     ["fingers-registered"] = exportAuditData.AuditData.GetLength(0),
                     ["template"] = textFIR.TextFIR,
+                    ["fingers-id"] = new JsonArray(fingers.Select(finger => JsonValue.Create(finger)).ToArray()),
+                    ["quality-FIR"] = quality,
                     ["success"] = true,
                 }
             );
@@ -76,7 +84,9 @@ public class Biometric
                 {
                     ["fingers-registered"] = exportAuditData.AuditData.GetLength(0),
                     ["template"] = textFIR.TextFIR,
+                    ["fingers-id"] = new JsonArray(fingers.Select(finger => JsonValue.Create(finger)).ToArray()),
                     ["images"] = new JsonArray(images.Select(image => JsonValue.Create(image)).ToArray()),
+                    ["quality-FIR"] = quality,
                     ["success"] = true,
                 }
             );
