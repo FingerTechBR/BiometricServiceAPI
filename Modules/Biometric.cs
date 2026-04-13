@@ -20,7 +20,7 @@ public class Biometric
 
         APIServiceInstance._NBioAPI.GetFIRFromHandle(auditHFIR, out NBioAPI.Type.FIR auditFIR);
         int quality = auditFIR.Header.Quality;
-        
+
         APIServiceInstance._NBioAPI.CloseDevice(NBioAPI.Type.DEVICE_ID.AUTO);
         if (ret != NBioAPI.Error.NONE) return new BadRequestObjectResult(
             new JsonObject
@@ -127,13 +127,16 @@ public class Biometric
         );
     }
 
-    public IActionResult IdentifyOneOnOne(JsonObject template, bool img = false)
+    public IActionResult IdentifyOneOnOne(JsonObject template, bool img = false, uint windowVisibility = NBioAPI.Type.WINDOW_STYLE.POPUP)
     {
         var secondFir = new NBioAPI.Type.FIR_TEXTENCODE { TextFIR = template["template"]?.ToString() };
         HFIR auditHFIR = new HFIR();
 
+        NBioAPI.Type.WINDOW_OPTION windowOption = new NBioAPI.Type.WINDOW_OPTION();
+        windowOption.WindowStyle = windowVisibility;
+
         APIServiceInstance._NBioAPI.OpenDevice(NBioAPI.Type.DEVICE_ID.AUTO);
-        uint ret = APIServiceInstance._NBioAPI.Verify(secondFir, out bool matched, null, -1, auditHFIR, null);
+        uint ret = APIServiceInstance._NBioAPI.Verify(secondFir, out bool matched, null, -1, auditHFIR, windowOption);
         APIServiceInstance._NBioAPI.CloseDevice(NBioAPI.Type.DEVICE_ID.AUTO);
         if (ret != NBioAPI.Error.NONE) return new BadRequestObjectResult(
             new JsonObject
@@ -171,10 +174,15 @@ public class Biometric
         }
     }
 
-    public IActionResult Identification(uint secuLevel = NBioAPI.Type.FIR_SECURITY_LEVEL.NORMAL)
+    public IActionResult Identification(uint secuLevel = NBioAPI.Type.FIR_SECURITY_LEVEL.NORMAL, bool img = false, uint windowVisibility = NBioAPI.Type.WINDOW_STYLE.POPUP)
     {
+        HFIR auditHFIR = new HFIR();
+
+        NBioAPI.Type.WINDOW_OPTION windowOption = new NBioAPI.Type.WINDOW_OPTION();
+        windowOption.WindowStyle = windowVisibility;
+
         APIServiceInstance._NBioAPI.OpenDevice(NBioAPI.Type.DEVICE_ID.AUTO);
-        uint ret = APIServiceInstance._NBioAPI.Capture(NBioAPI.Type.FIR_PURPOSE.VERIFY, out NBioAPI.Type.HFIR hCapturedFIR, NBioAPI.Type.TIMEOUT.DEFAULT, null, null);
+        uint ret = APIServiceInstance._NBioAPI.Capture(NBioAPI.Type.FIR_PURPOSE.VERIFY, out NBioAPI.Type.HFIR hCapturedFIR, NBioAPI.Type.TIMEOUT.DEFAULT, auditHFIR, windowOption);
         APIServiceInstance._NBioAPI.CloseDevice(NBioAPI.Type.DEVICE_ID.AUTO);
         if (ret != NBioAPI.Error.NONE) return new BadRequestObjectResult(
             new JsonObject
@@ -187,14 +195,34 @@ public class Biometric
         NBioAPI.IndexSearch.CALLBACK_INFO_0 cbInfo = new();
         APIServiceInstance._IndexSearch.IdentifyData(hCapturedFIR, secuLevel, out NBioAPI.IndexSearch.FP_INFO fpInfo, cbInfo);
 
-        return new OkObjectResult(
-            new JsonObject
-            {
-                ["message"] = fpInfo.ID != 0 ? "Fingerprint match found" : "Fingerprint match not found",
-                ["id"] = fpInfo.ID,
-                ["success"] = fpInfo.ID != 0
-            }
-        );
+        if (!img)
+        {
+            return new OkObjectResult(
+                new JsonObject
+                {
+                    ["message"] = fpInfo.ID != 0 ? "Fingerprint match found" : "Fingerprint match not found",
+                    ["id"] = fpInfo.ID,
+                    ["success"] = fpInfo.ID != 0
+                }
+            );
+        }
+        else
+        {
+            NBioAPI.Export NBioExport = new NBioAPI.Export(APIServiceInstance._NBioAPI);
+            NBioExport.NBioBSPToImage(auditHFIR, out NBioAPI.Export.EXPORT_AUDIT_DATA exportAuditData);
+            APIServiceInstance._NBioAPI.ImgConvRawToJpgBuf(exportAuditData.AuditData[0].Image[0].Data, exportAuditData.ImageWidth, exportAuditData.ImageHeight, 1, out byte[] imgData);
+            string image64 = Convert.ToBase64String(imgData);
+
+            return new OkObjectResult(
+                new JsonObject
+                {
+                    ["message"] = fpInfo.ID != 0 ? "Fingerprint match found" : "Fingerprint match not found",
+                    ["id"] = fpInfo.ID,
+                    ["image"] = image64,
+                    ["success"] = fpInfo.ID != 0
+                }
+            );
+        }
 
     }
 

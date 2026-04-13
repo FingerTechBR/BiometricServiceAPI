@@ -8,8 +8,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>dotnet-BiometricService-c7d8d14c-120e-4583-b733-7856abd5d006</UserSecretsId>
     <ApplicationIcon>icone-finger.ico</ApplicationIcon>
-    <AssemblyVersion>2.4.6.0</AssemblyVersion>
-    <FileVersion>2.4.6.0</FileVersion>
+    <AssemblyVersion>2.4.7.0</AssemblyVersion>
+    <FileVersion>2.4.7.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>

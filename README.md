@@ -1,17 +1,59 @@
 # Biometric API
 
-API que se comunica com um dispositivo biométrico local nitgen, perfeito para integração com aplicações web.
+API que se comunica com um dispositivo biométrico local nitgen, perfeita para integração com aplicações web.
 
-## Compilando
+## Requisitos / Compilando
 
 - Requer que as bibliotecas do SDK eNBioBSP estejam instaladas no sistema.
-- .NET 7 ou superior
-- Se você deseja apenas consumir a API, não é necessário compilar o projeto; basta baixar a versão mais recente da API na página de Lançamentos/Releases, executar o instalador e executar a API localmente
+- Requer **.NET 8 SDK** (runtime + SDK).
+- Visual Studio 2022 ou superior (opcional, mas recomendado para desenvolvimento e debugging).
+- Se você deseja apenas consumir a API, não é necessário compilar o projeto; basta baixar a versão mais recente da API na página de Lançamentos/Releases, executar o instalador e executar a API localmente.
+
+Observação: você pode verificar/alterar o alvo de framework no arquivo de projeto (`.csproj`) e garantir que o .NET 8 SDK esteja instalado localmente.
+
+## Execução e porta
+
+O prefixo padrão é: `http://localhost:5000/apiservice/`
+Você pode alterar a porta em `appsettings.json` ou nas configurações de execução (`launchSettings.json`) se houver conflito com outra aplicação.
+
+---
+
+## Sumário de Endpoints
+
+Abaixo um resumo rápido dos endpoints disponíveis (prefixo base: `/apiservice/`):
+
+- `GET capture-hash` — Captura impressão digital e retorna template (hash), ids dos dedos, qualidade e opcionalmente imagens em base64.
+- `GET capture-for-verify` — Captura impressão para verificação e retorna template e imagem; permite parâmetro `window` para estilo da janela de captura.
+- `POST match-one-on-one` — Envia um template para comparar com uma captura ao vivo (1:1). Pode retornar a imagem se `img=true`.
+- `GET identification` — Realiza identificação 1:N contra o índice em memória; aceita `secuLevel` para ajustar sensibilidade.
+- `POST load-to-memory` — Carrega um array de templates com `id` para o índice em memória (usado em identificação 1:N).
+- `GET delete-all-from-memory` — Remove todos os templates carregados na memória.
+- `GET total-in-memory` — Retorna a quantidade de templates atualmente carregados na memória.
+- `GET device-unique-id` — Retorna o ID/serial único do dispositivo biométrico.
+- `POST join-templates` — Une dois ou mais templates em um único template combinado.
+
+---
+
+## Arquivos principais
+
+- `Modules/Biometric.cs` — Implementa a lógica principal que conversa com o SDK NBioBSP. Métodos expostos usados pelo controlador:
+  - `CaptureHash(bool img = false)` — Captura impressão para enrolamento; parâmetro `img` controla retorno das imagens em base64.
+  - `CaptureForVerify(uint windowVisibility = NBioAPI.Type.WINDOW_STYLE.POPUP)` — Captura para verificação; `windowVisibility` define estilo da janela de captura.
+  - `IdentifyOneOnOne(JsonObject template, bool img = false, uint windowVisibility = NBioAPI.Type.WINDOW_STYLE.POPUP)` — Verifica 1:1 contra um template fornecido; pode retornar imagem.
+  - `Identification(uint secuLevel = NBioAPI.Type.FIR_SECURITY_LEVEL.NORMAL, bool img = false, uint windowVisibility = NBioAPI.Type.WINDOW_STYLE.POPUP)` — Identificação 1:N usando índice em memória; `secuLevel` varia entre 1 e 9.
+  - `LoadToMemory(JsonArray fingers)` / `DeleteAllFromMemory()` / `TotalIdsInMemory()` — Gerenciam o índice em memória usado na identificação.
+  - `JoinTemplates(JsonArray fingers)` — Une múltiplos templates em um único template combinado.
+
+- `Controllers/APIController.cs` — Mapeia endpoints HTTP para os métodos de `Biometric` e traduz parâmetros de query/body. Parâmetros relevantes:
+  - `img` (query) — booleano opcional para retornar imagens em resposta.
+  - `window` (query) — inteiro opcional para controlar estilo da janela (`0` POPUP, `1` INVISIBLE, etc.).
+  - `secuLevel` (query) — inteiro opcional entre 1 a 9 para ajustar sensibilidade na identificação 1:N.
+
+---
 
 # Mapa da API
 
-O prefixo é: `http://localhost:5000/apiservice/`  
-Você pode alterar a porta em appsettings.json se precisar em caso de conflito.
+Abaixo estão os endpoints expostos pela API e seus retornos.
 
 #### GET: `capture-hash/`
 
@@ -146,6 +188,8 @@ Exemplo de uso e retorno:
 }
 ```
 
+Você também pode passar um parâmetro opcional `window` para definir o estilo da janela de captura, as opções disponíveis são as mesmas do endpoint `capture-for-verify`.
+
 ---
 
 #### GET: `identification/`
@@ -174,6 +218,8 @@ qualquer outra coisa:
 Caso encontre problemas com a validação da impressão digital sendo muito rigorosa ou muito permissível, é possível passar um parâmetro opcional `secuLevel` para reduzir ou aumentar o nível de segurança da validação entre 1 (mínimo) e 9 (máximo), o padrão é 5.
 
 `/identification?secuLevel=9`
+
+Você também pode passar um parâmetro opcional `img` para retornar a imagem da digital, e um parâmetro `window` para definir o estilo da janela de captura, as opções disponíveis são as mesmas do endpoint `capture-for-verify`.
 
 ---
 
@@ -298,4 +344,3 @@ qualquer outra coisa:
   "message": "Error creating template: {nitgen error code}",
   "success": false
 }
-```

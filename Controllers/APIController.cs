@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using System.Drawing;
 using System.Text.Json.Nodes;
 
 namespace BiometricService.Controllers
@@ -41,11 +42,19 @@ namespace BiometricService.Controllers
         }
 
         [HttpPost("match-one-on-one")]
-        public IActionResult MatchOneOnOne([FromBody] JsonObject template, bool? img)
+        public IActionResult MatchOneOnOne([FromBody] JsonObject template, bool? img, uint? window)
         {
-            if (img.HasValue)
+            if (img.HasValue && window.HasValue)
+            {
+                return _biometric.IdentifyOneOnOne(template, (bool)img, (uint)window);
+            }
+            else if (img.HasValue)
             {
                 return _biometric.IdentifyOneOnOne(template, (bool)img);
+            }
+            else if (window.HasValue)
+            {
+                return _biometric.IdentifyOneOnOne(template, windowVisibility: (uint)window);
             }
             else
             {
@@ -54,11 +63,35 @@ namespace BiometricService.Controllers
         }
 
         [HttpGet("identification")]
-        public IActionResult Identification(uint? secuLevel)
+        public IActionResult Identification(uint? secuLevel, bool? img, uint? window)
         {
-            if (secuLevel.HasValue)
+            if (secuLevel.HasValue && img.HasValue && window.HasValue)
+            {
+                return _biometric.Identification((uint)secuLevel, (bool)img, (uint)window);
+            }
+            else if (secuLevel.HasValue && img.HasValue)
+            {
+                return _biometric.Identification((uint)secuLevel, (bool)img);
+            }
+            else if (secuLevel.HasValue && window.HasValue)
+            {
+                return _biometric.Identification((uint)secuLevel, windowVisibility: (uint)window);
+            }
+            else if (img.HasValue && window.HasValue)
+            {
+                return _biometric.Identification(img: (bool)img, windowVisibility: (uint)window);
+            }
+            else if (secuLevel.HasValue)
             {
                 return _biometric.Identification((uint)secuLevel);
+            }
+            else if (img.HasValue)
+            {
+                return _biometric.Identification(img: (bool)img);
+            }
+            else if (window.HasValue)
+            {
+                return _biometric.Identification(windowVisibility: (uint)window);
             }
             else
             {
