@@ -43,6 +43,14 @@ var serviceApp = builder.Build();
 var logger = serviceApp.Services.GetRequiredService<ILogger<Program>>();
 logger.LogInformation("CORS configuration - AllowAnyOrigin: {AllowAnyOrigin}, AllowedOrigins: {AllowedOrigins}", allowAnyOrigin, string.Join(',', allowedOrigins));
 
+serviceApp.UseExceptionHandler(app => app.Run(async ctx =>
+{
+    var ex = ctx.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
+    ctx.Response.StatusCode = 500;
+    ctx.Response.ContentType = "application/json";
+    await ctx.Response.WriteAsync($"{{\"message\":\"Error: {ex?.Message}\",\"success\":false}}");
+}));
+
 serviceApp.UseRouting();
 serviceApp.UseCors("DefaultCorsPolicy");
 serviceApp.UseCors();

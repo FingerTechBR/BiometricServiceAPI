@@ -39,7 +39,6 @@ namespace BiometricService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error in Biometric API Service: {Message}", ex.Message);
-                Environment.Exit(1);
             }
         }
     }

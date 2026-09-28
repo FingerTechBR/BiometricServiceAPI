@@ -12,152 +12,146 @@ public class Biometric
     {
         APIServiceInstance = apiService;
     }
-    public IActionResult CaptureHash(bool img = false)
+
+    private IActionResult CaptureError(string operation, Exception ex)
     {
-        HFIR auditHFIR = new HFIR();
-        APIServiceInstance._NBioAPI.OpenDevice(NBioAPI.Type.DEVICE_ID.AUTO);
-        uint ret = APIServiceInstance._NBioAPI.Capture(NBioAPI.Type.FIR_PURPOSE.ENROLL, out NBioAPI.Type.HFIR hCapturedFIR, NBioAPI.Type.TIMEOUT.DEFAULT, auditHFIR, null);
-
-        APIServiceInstance._NBioAPI.GetFIRFromHandle(auditHFIR, out NBioAPI.Type.FIR auditFIR);
-        int quality = auditFIR.Header.Quality;
-
-        APIServiceInstance._NBioAPI.CloseDevice(NBioAPI.Type.DEVICE_ID.AUTO);
-        if (ret != NBioAPI.Error.NONE) return new BadRequestObjectResult(
+        try { APIServiceInstance._NBioAPI.CloseDevice(NBioAPI.Type.DEVICE_ID.AUTO); }
+        catch { }
+        return new ObjectResult(
             new JsonObject
             {
-                ["message"] = $"Error on Capture: {ret}",
+                ["message"] = $"Error on {operation}: {ex.Message}",
                 ["success"] = false
             }
-        );
+        )
+        { StatusCode = 500 };
+    }
 
-        NBioAPI.Export NBioExport = new NBioAPI.Export(APIServiceInstance._NBioAPI);
-        NBioExport.NBioBSPToImage(auditHFIR, out NBioAPI.Export.EXPORT_AUDIT_DATA exportAuditData);
-
-        string tempPath = Environment.ExpandEnvironmentVariables(@"%TEMP%\fingers-registered");
-
-        if (!Directory.Exists(tempPath))
+    public IActionResult CaptureHash(bool img = false)
+    {
+        try
         {
-            Directory.CreateDirectory(tempPath);
-        }
-
-        DirectoryInfo directoryInfo = new DirectoryInfo(tempPath);
-        FileInfo[] files = directoryInfo.GetFiles("*.*", SearchOption.TopDirectoryOnly);
-        foreach (FileInfo file in files)
-        {
-            if (file.Extension.ToLower() == ".jpg")
+            HFIR auditHFIR = new HFIR();
+            uint ret;
+            NBioAPI.Type.HFIR hCapturedFIR;
+            int quality;
+            try
             {
-                file.Delete();
+                APIServiceInstance._NBioAPI.OpenDevice(NBioAPI.Type.DEVICE_ID.AUTO);
+                ret = APIServiceInstance._NBioAPI.Capture(NBioAPI.Type.FIR_PURPOSE.ENROLL, out hCapturedFIR, NBioAPI.Type.TIMEOUT.DEFAULT, auditHFIR, null);
+
+                APIServiceInstance._NBioAPI.GetFIRFromHandle(auditHFIR, out NBioAPI.Type.FIR auditFIR);
+                quality = auditFIR.Header.Quality;
+            }
+            finally
+            {
+                APIServiceInstance._NBioAPI.CloseDevice(NBioAPI.Type.DEVICE_ID.AUTO);
+            }
+            if (ret != NBioAPI.Error.NONE) return new BadRequestObjectResult(
+                new JsonObject
+                {
+                    ["message"] = $"Error on Capture: {ret}",
+                    ["success"] = false
+                }
+            );
+
+            NBioAPI.Export NBioExport = new NBioAPI.Export(APIServiceInstance._NBioAPI);
+            NBioExport.NBioBSPToImage(auditHFIR, out NBioAPI.Export.EXPORT_AUDIT_DATA exportAuditData);
+
+            string tempPath = Environment.ExpandEnvironmentVariables(@"%TEMP%\fingers-registered");
+
+            if (!Directory.Exists(tempPath))
+            {
+                Directory.CreateDirectory(tempPath);
+            }
+
+            DirectoryInfo directoryInfo = new DirectoryInfo(tempPath);
+            FileInfo[] files = directoryInfo.GetFiles("*.*", SearchOption.TopDirectoryOnly);
+            foreach (FileInfo file in files)
+            {
+                if (file.Extension.ToLower() == ".jpg")
+                {
+                    file.Delete();
+                }
+            }
+
+            APIServiceInstance._NBioAPI.GetTextFIRFromHandle(hCapturedFIR, out NBioAPI.Type.FIR_TEXTENCODE textFIR, true);
+
+            string[] images = new string[10];
+            List<byte> fingers = new List<byte> { };
+
+            foreach (NBioAPI.Export.AUDIT_DATA finger in exportAuditData.AuditData)
+            {
+                APIServiceInstance._NBioAPI.ImgConvRawToJpgBuf(finger.Image[0].Data, exportAuditData.ImageWidth, exportAuditData.ImageHeight, 1, out byte[] imgData);
+                Directory.CreateDirectory(tempPath);
+                File.WriteAllBytes($"{tempPath}\\finger_{finger.FingerID}.jpg", imgData);
+                images[finger.FingerID - 1] = Convert.ToBase64String(imgData);
+                fingers.Add(finger.FingerID);
+            }
+
+            if (!img)
+            {
+                return new OkObjectResult(
+                    new JsonObject
+                    {
+                        ["fingers-registered"] = exportAuditData.AuditData.GetLength(0),
+                        ["template"] = textFIR.TextFIR,
+                        ["fingers-id"] = new JsonArray(fingers.Select(finger => JsonValue.Create(finger)).ToArray()),
+                        ["quality-FIR"] = quality,
+                        ["success"] = true,
+                    }
+                );
+            }
+            else
+            {
+                return new OkObjectResult(
+                    new JsonObject
+                    {
+                        ["fingers-registered"] = exportAuditData.AuditData.GetLength(0),
+                        ["template"] = textFIR.TextFIR,
+                        ["fingers-id"] = new JsonArray(fingers.Select(finger => JsonValue.Create(finger)).ToArray()),
+                        ["images"] = new JsonArray(images.Select(image => JsonValue.Create(image)).ToArray()),
+                        ["quality-FIR"] = quality,
+                        ["success"] = true,
+                    }
+                );
             }
         }
-
-        APIServiceInstance._NBioAPI.GetTextFIRFromHandle(hCapturedFIR, out NBioAPI.Type.FIR_TEXTENCODE textFIR, true);
-
-        string[] images = new string[10];
-        List<byte> fingers = new List<byte> { };
-
-        foreach (NBioAPI.Export.AUDIT_DATA finger in exportAuditData.AuditData)
+        catch (Exception ex)
         {
-            APIServiceInstance._NBioAPI.ImgConvRawToJpgBuf(finger.Image[0].Data, exportAuditData.ImageWidth, exportAuditData.ImageHeight, 1, out byte[] imgData);
-            Directory.CreateDirectory(tempPath);
-            File.WriteAllBytes($"{tempPath}\\finger_{finger.FingerID}.jpg", imgData);
-            images[finger.FingerID - 1] = Convert.ToBase64String(imgData);
-            fingers.Add(finger.FingerID);
-        }
-
-        if (!img)
-        {
-            return new OkObjectResult(
-                new JsonObject
-                {
-                    ["fingers-registered"] = exportAuditData.AuditData.GetLength(0),
-                    ["template"] = textFIR.TextFIR,
-                    ["fingers-id"] = new JsonArray(fingers.Select(finger => JsonValue.Create(finger)).ToArray()),
-                    ["quality-FIR"] = quality,
-                    ["success"] = true,
-                }
-            );
-        }
-        else
-        {
-            return new OkObjectResult(
-                new JsonObject
-                {
-                    ["fingers-registered"] = exportAuditData.AuditData.GetLength(0),
-                    ["template"] = textFIR.TextFIR,
-                    ["fingers-id"] = new JsonArray(fingers.Select(finger => JsonValue.Create(finger)).ToArray()),
-                    ["images"] = new JsonArray(images.Select(image => JsonValue.Create(image)).ToArray()),
-                    ["quality-FIR"] = quality,
-                    ["success"] = true,
-                }
-            );
+            return CaptureError("Capture", ex);
         }
     }
 
     public IActionResult CaptureForVerify(uint windowVisibility = NBioAPI.Type.WINDOW_STYLE.POPUP)
     {
-        HFIR auditHFIR = new HFIR();
-
-        NBioAPI.Type.WINDOW_OPTION windowOption = new NBioAPI.Type.WINDOW_OPTION();
-        windowOption.WindowStyle = windowVisibility;
-
-        APIServiceInstance._NBioAPI.OpenDevice(NBioAPI.Type.DEVICE_ID.AUTO);
-        uint ret = APIServiceInstance._NBioAPI.Capture(NBioAPI.Type.FIR_PURPOSE.VERIFY, out NBioAPI.Type.HFIR hCapturedFIR, NBioAPI.Type.TIMEOUT.DEFAULT, auditHFIR, windowOption);
-        APIServiceInstance._NBioAPI.CloseDevice(NBioAPI.Type.DEVICE_ID.AUTO);
-        if (ret != NBioAPI.Error.NONE) return new BadRequestObjectResult(
-            new JsonObject
-            {
-                ["message"] = $"Error on Capture: {ret}",
-                ["success"] = false
-            }
-        );
-
-        APIServiceInstance._NBioAPI.GetTextFIRFromHandle(hCapturedFIR, out NBioAPI.Type.FIR_TEXTENCODE textFIR, true);
-        NBioAPI.Export NBioExport = new NBioAPI.Export(APIServiceInstance._NBioAPI);
-        NBioExport.NBioBSPToImage(auditHFIR, out NBioAPI.Export.EXPORT_AUDIT_DATA exportAuditData);
-        APIServiceInstance._NBioAPI.ImgConvRawToJpgBuf(exportAuditData.AuditData[0].Image[0].Data, exportAuditData.ImageWidth, exportAuditData.ImageHeight, 1, out byte[] imgData);
-        string image64 = Convert.ToBase64String(imgData);
-
-        return new OkObjectResult(
-            new JsonObject
-            {
-                ["template"] = textFIR.TextFIR,
-                ["image"] = image64,
-                ["success"] = true
-            }
-        );
-    }
-
-    public IActionResult IdentifyOneOnOne(JsonObject template, bool img = false, uint windowVisibility = NBioAPI.Type.WINDOW_STYLE.POPUP)
-    {
-        var secondFir = new NBioAPI.Type.FIR_TEXTENCODE { TextFIR = template["template"]?.ToString() };
-        HFIR auditHFIR = new HFIR();
-
-        NBioAPI.Type.WINDOW_OPTION windowOption = new NBioAPI.Type.WINDOW_OPTION();
-        windowOption.WindowStyle = windowVisibility;
-
-        APIServiceInstance._NBioAPI.OpenDevice(NBioAPI.Type.DEVICE_ID.AUTO);
-        uint ret = APIServiceInstance._NBioAPI.Verify(secondFir, out bool matched, null, -1, auditHFIR, windowOption);
-        APIServiceInstance._NBioAPI.CloseDevice(NBioAPI.Type.DEVICE_ID.AUTO);
-        if (ret != NBioAPI.Error.NONE) return new BadRequestObjectResult(
-            new JsonObject
-            {
-                ["message"] = ret == NBioAPI.Error.CAPTURE_TIMEOUT ? "Timeout" : $"Error on Verify: {ret}",
-                ["success"] = false
-            }
-        );
-
-        if (!img)
+        try
         {
-            return new OkObjectResult(
+            HFIR auditHFIR = new HFIR();
+
+            NBioAPI.Type.WINDOW_OPTION windowOption = new NBioAPI.Type.WINDOW_OPTION();
+            windowOption.WindowStyle = windowVisibility;
+
+            uint ret;
+            NBioAPI.Type.HFIR hCapturedFIR;
+            try
+            {
+                APIServiceInstance._NBioAPI.OpenDevice(NBioAPI.Type.DEVICE_ID.AUTO);
+                ret = APIServiceInstance._NBioAPI.Capture(NBioAPI.Type.FIR_PURPOSE.VERIFY, out hCapturedFIR, NBioAPI.Type.TIMEOUT.DEFAULT, auditHFIR, windowOption);
+            }
+            finally
+            {
+                APIServiceInstance._NBioAPI.CloseDevice(NBioAPI.Type.DEVICE_ID.AUTO);
+            }
+            if (ret != NBioAPI.Error.NONE) return new BadRequestObjectResult(
                 new JsonObject
                 {
-                    ["message"] = matched ? "Fingerprint matches" : "Fingerprint doesnt match",
-                    ["success"] = matched
+                    ["message"] = $"Error on Capture: {ret}",
+                    ["success"] = false
                 }
             );
-        }
-        else
-        {
+
+            APIServiceInstance._NBioAPI.GetTextFIRFromHandle(hCapturedFIR, out NBioAPI.Type.FIR_TEXTENCODE textFIR, true);
             NBioAPI.Export NBioExport = new NBioAPI.Export(APIServiceInstance._NBioAPI);
             NBioExport.NBioBSPToImage(auditHFIR, out NBioAPI.Export.EXPORT_AUDIT_DATA exportAuditData);
             APIServiceInstance._NBioAPI.ImgConvRawToJpgBuf(exportAuditData.AuditData[0].Image[0].Data, exportAuditData.ImageWidth, exportAuditData.ImageHeight, 1, out byte[] imgData);
@@ -166,175 +160,297 @@ public class Biometric
             return new OkObjectResult(
                 new JsonObject
                 {
-                    ["message"] = matched ? "Fingerprint matches" : "Fingerprint doesnt match",
+                    ["template"] = textFIR.TextFIR,
                     ["image"] = image64,
-                    ["success"] = matched
+                    ["success"] = true
                 }
             );
+        }
+        catch (Exception ex)
+        {
+            return CaptureError("Capture", ex);
+        }
+    }
+
+    public IActionResult IdentifyOneOnOne(JsonObject template, bool img = false, uint windowVisibility = NBioAPI.Type.WINDOW_STYLE.POPUP)
+    {
+        try
+        {
+            var secondFir = new NBioAPI.Type.FIR_TEXTENCODE { TextFIR = template["template"]?.ToString() };
+            HFIR auditHFIR = new HFIR();
+
+            NBioAPI.Type.WINDOW_OPTION windowOption = new NBioAPI.Type.WINDOW_OPTION();
+            windowOption.WindowStyle = windowVisibility;
+
+            uint ret;
+            bool matched;
+            try
+            {
+                APIServiceInstance._NBioAPI.OpenDevice(NBioAPI.Type.DEVICE_ID.AUTO);
+                ret = APIServiceInstance._NBioAPI.Verify(secondFir, out matched, null, -1, auditHFIR, windowOption);
+            }
+            finally
+            {
+                APIServiceInstance._NBioAPI.CloseDevice(NBioAPI.Type.DEVICE_ID.AUTO);
+            }
+            if (ret != NBioAPI.Error.NONE) return new BadRequestObjectResult(
+                new JsonObject
+                {
+                    ["message"] = ret == NBioAPI.Error.CAPTURE_TIMEOUT ? "Timeout" : $"Error on Verify: {ret}",
+                    ["success"] = false
+                }
+            );
+
+            if (!img)
+            {
+                return new OkObjectResult(
+                    new JsonObject
+                    {
+                        ["message"] = matched ? "Fingerprint matches" : "Fingerprint doesnt match",
+                        ["success"] = matched
+                    }
+                );
+            }
+            else
+            {
+                NBioAPI.Export NBioExport = new NBioAPI.Export(APIServiceInstance._NBioAPI);
+                NBioExport.NBioBSPToImage(auditHFIR, out NBioAPI.Export.EXPORT_AUDIT_DATA exportAuditData);
+                APIServiceInstance._NBioAPI.ImgConvRawToJpgBuf(exportAuditData.AuditData[0].Image[0].Data, exportAuditData.ImageWidth, exportAuditData.ImageHeight, 1, out byte[] imgData);
+                string image64 = Convert.ToBase64String(imgData);
+
+                return new OkObjectResult(
+                    new JsonObject
+                    {
+                        ["message"] = matched ? "Fingerprint matches" : "Fingerprint doesnt match",
+                        ["image"] = image64,
+                        ["success"] = matched
+                    }
+                );
+            }
+        }
+        catch (Exception ex)
+        {
+            return CaptureError("Verify", ex);
         }
     }
 
     public IActionResult Identification(uint secuLevel = NBioAPI.Type.FIR_SECURITY_LEVEL.NORMAL, bool img = false, uint windowVisibility = NBioAPI.Type.WINDOW_STYLE.POPUP)
     {
-        HFIR auditHFIR = new HFIR();
+        try
+        {
+            HFIR auditHFIR = new HFIR();
 
-        NBioAPI.Type.WINDOW_OPTION windowOption = new NBioAPI.Type.WINDOW_OPTION();
-        windowOption.WindowStyle = windowVisibility;
+            NBioAPI.Type.WINDOW_OPTION windowOption = new NBioAPI.Type.WINDOW_OPTION();
+            windowOption.WindowStyle = windowVisibility;
 
-        APIServiceInstance._NBioAPI.OpenDevice(NBioAPI.Type.DEVICE_ID.AUTO);
-        uint ret = APIServiceInstance._NBioAPI.Capture(NBioAPI.Type.FIR_PURPOSE.VERIFY, out NBioAPI.Type.HFIR hCapturedFIR, NBioAPI.Type.TIMEOUT.DEFAULT, auditHFIR, windowOption);
-        APIServiceInstance._NBioAPI.CloseDevice(NBioAPI.Type.DEVICE_ID.AUTO);
-        if (ret != NBioAPI.Error.NONE) return new BadRequestObjectResult(
-            new JsonObject
+            uint ret;
+            NBioAPI.Type.HFIR hCapturedFIR;
+            try
             {
-                ["message"] = $"Error on Capture: {ret}",
-                ["success"] = false
+                APIServiceInstance._NBioAPI.OpenDevice(NBioAPI.Type.DEVICE_ID.AUTO);
+                ret = APIServiceInstance._NBioAPI.Capture(NBioAPI.Type.FIR_PURPOSE.VERIFY, out hCapturedFIR, NBioAPI.Type.TIMEOUT.DEFAULT, auditHFIR, windowOption);
             }
-        );
-
-        NBioAPI.IndexSearch.CALLBACK_INFO_0 cbInfo = new();
-        APIServiceInstance._IndexSearch.IdentifyData(hCapturedFIR, secuLevel, out NBioAPI.IndexSearch.FP_INFO fpInfo, cbInfo);
-
-        if (!img)
-        {
-            return new OkObjectResult(
+            finally
+            {
+                APIServiceInstance._NBioAPI.CloseDevice(NBioAPI.Type.DEVICE_ID.AUTO);
+            }
+            if (ret != NBioAPI.Error.NONE) return new BadRequestObjectResult(
                 new JsonObject
                 {
-                    ["message"] = fpInfo.ID != 0 ? "Fingerprint match found" : "Fingerprint match not found",
-                    ["id"] = fpInfo.ID,
-                    ["success"] = fpInfo.ID != 0
+                    ["message"] = $"Error on Capture: {ret}",
+                    ["success"] = false
                 }
             );
+
+            NBioAPI.IndexSearch.CALLBACK_INFO_0 cbInfo = new();
+            APIServiceInstance._IndexSearch.IdentifyData(hCapturedFIR, secuLevel, out NBioAPI.IndexSearch.FP_INFO fpInfo, cbInfo);
+
+            if (!img)
+            {
+                return new OkObjectResult(
+                    new JsonObject
+                    {
+                        ["message"] = fpInfo.ID != 0 ? "Fingerprint match found" : "Fingerprint match not found",
+                        ["id"] = fpInfo.ID,
+                        ["success"] = fpInfo.ID != 0
+                    }
+                );
+            }
+            else
+            {
+                NBioAPI.Export NBioExport = new NBioAPI.Export(APIServiceInstance._NBioAPI);
+                NBioExport.NBioBSPToImage(auditHFIR, out NBioAPI.Export.EXPORT_AUDIT_DATA exportAuditData);
+                APIServiceInstance._NBioAPI.ImgConvRawToJpgBuf(exportAuditData.AuditData[0].Image[0].Data, exportAuditData.ImageWidth, exportAuditData.ImageHeight, 1, out byte[] imgData);
+                string image64 = Convert.ToBase64String(imgData);
+
+                return new OkObjectResult(
+                    new JsonObject
+                    {
+                        ["message"] = fpInfo.ID != 0 ? "Fingerprint match found" : "Fingerprint match not found",
+                        ["id"] = fpInfo.ID,
+                        ["image"] = image64,
+                        ["success"] = fpInfo.ID != 0
+                    }
+                );
+            }
         }
-        else
+        catch (Exception ex)
         {
-            NBioAPI.Export NBioExport = new NBioAPI.Export(APIServiceInstance._NBioAPI);
-            NBioExport.NBioBSPToImage(auditHFIR, out NBioAPI.Export.EXPORT_AUDIT_DATA exportAuditData);
-            APIServiceInstance._NBioAPI.ImgConvRawToJpgBuf(exportAuditData.AuditData[0].Image[0].Data, exportAuditData.ImageWidth, exportAuditData.ImageHeight, 1, out byte[] imgData);
-            string image64 = Convert.ToBase64String(imgData);
-
-            return new OkObjectResult(
-                new JsonObject
-                {
-                    ["message"] = fpInfo.ID != 0 ? "Fingerprint match found" : "Fingerprint match not found",
-                    ["id"] = fpInfo.ID,
-                    ["image"] = image64,
-                    ["success"] = fpInfo.ID != 0
-                }
-            );
+            return CaptureError("Capture", ex);
         }
-
     }
 
     public IActionResult LoadToMemory(JsonArray fingers)
     {
-        if (fingers.Count == 0)
+        try
         {
-            return new BadRequestObjectResult(
-                new JsonObject
-                {
-                    ["message"] = "No templates to load",
-                    ["success"] = false
-                }
-            );
-        }
-
-        uint ret;
-        var textFir = new NBioAPI.Type.FIR_TEXTENCODE();
-        foreach (JsonObject fingerObject in fingers)
-        {
-            textFir.TextFIR = fingerObject["template"].ToString();
-            ret = APIServiceInstance._IndexSearch.AddFIR(textFir, (uint)fingerObject["id"], out _);
-            if (ret != NBioAPI.Error.NONE) return new BadRequestObjectResult(
-                new JsonObject
-                {
-                    ["message"] = $"Error on AddFIR: {ret}",
-                    ["success"] = false
-                }
-            );
-        }
-
-        return new OkObjectResult(
-            new JsonObject
+            if (fingers.Count == 0)
             {
-                ["message"] = "Templates loaded to memory",
-                ["success"] = true
+                return new BadRequestObjectResult(
+                    new JsonObject
+                    {
+                        ["message"] = "No templates to load",
+                        ["success"] = false
+                    }
+                );
             }
-        );
+
+            uint ret;
+            var textFir = new NBioAPI.Type.FIR_TEXTENCODE();
+            foreach (JsonObject fingerObject in fingers)
+            {
+                textFir.TextFIR = fingerObject["template"].ToString();
+                ret = APIServiceInstance._IndexSearch.AddFIR(textFir, (uint)fingerObject["id"], out _);
+                if (ret != NBioAPI.Error.NONE) return new BadRequestObjectResult(
+                    new JsonObject
+                    {
+                        ["message"] = $"Error on AddFIR: {ret}",
+                        ["success"] = false
+                    }
+                );
+            }
+
+            return new OkObjectResult(
+                new JsonObject
+                {
+                    ["message"] = "Templates loaded to memory",
+                    ["success"] = true
+                }
+            );
+        }
+        catch (Exception ex)
+        {
+            return CaptureError("AddFIR", ex);
+        }
     }
 
     public IActionResult DeleteAllFromMemory()
     {
-        APIServiceInstance._IndexSearch.ClearDB();
-        return new OkObjectResult(
-            new JsonObject
-            {
-                ["message"] = "All templates deleted from memory",
-                ["success"] = true
-            }
-        );
+        try
+        {
+            APIServiceInstance._IndexSearch.ClearDB();
+            return new OkObjectResult(
+                new JsonObject
+                {
+                    ["message"] = "All templates deleted from memory",
+                    ["success"] = true
+                }
+            );
+        }
+        catch (Exception ex)
+        {
+            return CaptureError("ClearDB", ex);
+        }
     }
 
     public IActionResult TotalIdsInMemory()
     {
-        APIServiceInstance._IndexSearch.GetDataCount(out UInt32 dataCount);
-        return new OkObjectResult(
-            new JsonObject
-            {
-                ["total"] = dataCount,
-                ["success"] = true
-            }
-        );
+        try
+        {
+            APIServiceInstance._IndexSearch.GetDataCount(out UInt32 dataCount);
+            return new OkObjectResult(
+                new JsonObject
+                {
+                    ["total"] = dataCount,
+                    ["success"] = true
+                }
+            );
+        }
+        catch (Exception ex)
+        {
+            return CaptureError("GetDataCount", ex);
+        }
     }
 
     public IActionResult DeviceUniqueSerialID()
     {
-        APIServiceInstance._NBioAPI.OpenDevice(NBioAPI.Type.DEVICE_ID.AUTO);
-        byte[] input = new byte[8];
-        APIServiceInstance._NBioAPI.DeviceIoControl(514, input, out byte[] deviceId);
-        APIServiceInstance._NBioAPI.CloseDevice(NBioAPI.Type.DEVICE_ID.AUTO);
-        return new OkObjectResult(
-            new JsonObject
+        try
+        {
+            byte[] deviceId;
+            try
             {
-                ["serial"] = BitConverter.ToString(deviceId),
-                ["success"] = true
+                APIServiceInstance._NBioAPI.OpenDevice(NBioAPI.Type.DEVICE_ID.AUTO);
+                byte[] input = new byte[8];
+                APIServiceInstance._NBioAPI.DeviceIoControl(514, input, out deviceId);
             }
-        );
+            finally
+            {
+                APIServiceInstance._NBioAPI.CloseDevice(NBioAPI.Type.DEVICE_ID.AUTO);
+            }
+            return new OkObjectResult(
+                new JsonObject
+                {
+                    ["serial"] = BitConverter.ToString(deviceId),
+                    ["success"] = true
+                }
+            );
+        }
+        catch (Exception ex)
+        {
+            return CaptureError("DeviceIoControl", ex);
+        }
     }
 
     public IActionResult JoinTemplates(JsonArray fingers)
     {
-        if (fingers.Count < 2) return new BadRequestObjectResult(
-                                   new JsonObject
-                                   {
-                                       ["message"] = "No templates to join",
-                                       ["success"] = false
-                                   });
-
-        List<string> list = [];
-        list.AddRange(fingers.Select(fingerObject => fingerObject["template"].ToString()));
-
-        NBioAPI.Type.FIR_PAYLOAD payload = new NBioAPI.Type.FIR_PAYLOAD();
-        for (int i = 1; i < fingers.Count; i++)
+        try
         {
-            NBioAPI.Type.FIR_TEXTENCODE textFIR1 = new NBioAPI.Type.FIR_TEXTENCODE() { TextFIR = list[i - 1] };
-            NBioAPI.Type.FIR_TEXTENCODE textFIR2 = new NBioAPI.Type.FIR_TEXTENCODE() { TextFIR = list[i] };
-            APIServiceInstance._NBioAPI.CreateTemplate(textFIR1, textFIR2, out NBioAPI.Type.HFIR hNew, payload);
-            uint ret = APIServiceInstance._NBioAPI.GetTextFIRFromHandle(hNew, out NBioAPI.Type.FIR_TEXTENCODE newTextFIR, true);
-            if (ret != NBioAPI.Error.NONE) return new BadRequestObjectResult(
-                                   new JsonObject
-                                   {
-                                       ["message"] = $"Error creating template: {ret}",
-                                       ["success"] = false
-                                   });
-            list[i] = newTextFIR.TextFIR;
-        }
-        return new OkObjectResult(
-            new JsonObject
+            if (fingers.Count < 2) return new BadRequestObjectResult(
+                                       new JsonObject
+                                       {
+                                           ["message"] = "No templates to join",
+                                           ["success"] = false
+                                       });
+
+            List<string> list = [];
+            list.AddRange(fingers.Select(fingerObject => fingerObject["template"].ToString()));
+
+            NBioAPI.Type.FIR_PAYLOAD payload = new NBioAPI.Type.FIR_PAYLOAD();
+            for (int i = 1; i < fingers.Count; i++)
             {
-                ["template"] = list[fingers.Count - 1],
-                ["message"] = $"Templates joined successfully",
-                ["success"] = true
-            });
+                NBioAPI.Type.FIR_TEXTENCODE textFIR1 = new NBioAPI.Type.FIR_TEXTENCODE() { TextFIR = list[i - 1] };
+                NBioAPI.Type.FIR_TEXTENCODE textFIR2 = new NBioAPI.Type.FIR_TEXTENCODE() { TextFIR = list[i] };
+                APIServiceInstance._NBioAPI.CreateTemplate(textFIR1, textFIR2, out NBioAPI.Type.HFIR hNew, payload);
+                uint ret = APIServiceInstance._NBioAPI.GetTextFIRFromHandle(hNew, out NBioAPI.Type.FIR_TEXTENCODE newTextFIR, true);
+                if (ret != NBioAPI.Error.NONE) return new BadRequestObjectResult(
+                                       new JsonObject
+                                       {
+                                           ["message"] = $"Error creating template: {ret}",
+                                           ["success"] = false
+                                       });
+                list[i] = newTextFIR.TextFIR;
+            }
+            return new OkObjectResult(
+                new JsonObject
+                {
+                    ["template"] = list[fingers.Count - 1],
+                    ["message"] = "Templates joined successfully",
+                    ["success"] = true
+                });
+        }
+        catch (Exception ex)
+        {
+            return CaptureError("CreateTemplate", ex);
+        }
     }
 }
