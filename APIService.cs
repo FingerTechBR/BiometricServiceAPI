@@ -16,7 +16,14 @@ namespace BiometricService
             _IndexSearch.InitEngine();
 
             string filepath = "C:\\Windows\\System32\\NBSP2Por.dll";
-            _NBioAPI.SetSkinResource(filepath);
+            if (File.Exists(filepath))
+            {
+                _NBioAPI.SetSkinResource(filepath);
+            }
+            else
+            {
+                _logger.LogWarning("NBSP2Por.dll not found at {Path}; biometric capture UI will use default skin.", filepath);
+            }
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)

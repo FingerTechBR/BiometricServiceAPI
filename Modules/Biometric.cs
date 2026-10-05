@@ -13,6 +13,21 @@ public class Biometric
         APIServiceInstance = apiService;
     }
 
+    private static readonly SemaphoreSlim _deviceLock = new(1, 1);
+    private static readonly TimeSpan DeviceWait = TimeSpan.FromMinutes(2);
+
+    private IActionResult DeviceBusy(string operation)
+    {
+        return new ObjectResult(
+            new JsonObject
+            {
+                ["message"] = $"Device busy on {operation}",
+                ["success"] = false
+            }
+        )
+        { StatusCode = 503 };
+    }
+
     private IActionResult CaptureError(string operation, Exception ex)
     {
         try { APIServiceInstance._NBioAPI.CloseDevice(NBioAPI.Type.DEVICE_ID.AUTO); }
@@ -29,6 +44,7 @@ public class Biometric
 
     public IActionResult CaptureHash(bool img = false)
     {
+        if (!_deviceLock.Wait(DeviceWait)) return DeviceBusy(nameof(CaptureHash));
         try
         {
             HFIR auditHFIR = new HFIR();
@@ -121,10 +137,15 @@ public class Biometric
         {
             return CaptureError("Capture", ex);
         }
+        finally
+        {
+            _deviceLock.Release();
+        }
     }
 
     public IActionResult CaptureForVerify(uint windowVisibility = NBioAPI.Type.WINDOW_STYLE.POPUP)
     {
+        if (!_deviceLock.Wait(DeviceWait)) return DeviceBusy(nameof(CaptureForVerify));
         try
         {
             HFIR auditHFIR = new HFIR();
@@ -170,10 +191,15 @@ public class Biometric
         {
             return CaptureError("Capture", ex);
         }
+        finally
+        {
+            _deviceLock.Release();
+        }
     }
 
     public IActionResult IdentifyOneOnOne(JsonObject template, bool img = false, uint windowVisibility = NBioAPI.Type.WINDOW_STYLE.POPUP)
     {
+        if (!_deviceLock.Wait(DeviceWait)) return DeviceBusy(nameof(IdentifyOneOnOne));
         try
         {
             var secondFir = new NBioAPI.Type.FIR_TEXTENCODE { TextFIR = template["template"]?.ToString() };
@@ -232,10 +258,15 @@ public class Biometric
         {
             return CaptureError("Verify", ex);
         }
+        finally
+        {
+            _deviceLock.Release();
+        }
     }
 
     public IActionResult Identification(uint secuLevel = NBioAPI.Type.FIR_SECURITY_LEVEL.NORMAL, bool img = false, uint windowVisibility = NBioAPI.Type.WINDOW_STYLE.POPUP)
     {
+        if (!_deviceLock.Wait(DeviceWait)) return DeviceBusy(nameof(Identification));
         try
         {
             HFIR auditHFIR = new HFIR();
@@ -298,10 +329,15 @@ public class Biometric
         {
             return CaptureError("Capture", ex);
         }
+        finally
+        {
+            _deviceLock.Release();
+        }
     }
 
     public IActionResult LoadToMemory(JsonArray fingers)
     {
+        if (!_deviceLock.Wait(DeviceWait)) return DeviceBusy(nameof(LoadToMemory));
         try
         {
             if (fingers.Count == 0)
@@ -342,10 +378,15 @@ public class Biometric
         {
             return CaptureError("AddFIR", ex);
         }
+        finally
+        {
+            _deviceLock.Release();
+        }
     }
 
     public IActionResult DeleteAllFromMemory()
     {
+        if (!_deviceLock.Wait(DeviceWait)) return DeviceBusy(nameof(DeleteAllFromMemory));
         try
         {
             APIServiceInstance._IndexSearch.ClearDB();
@@ -361,10 +402,15 @@ public class Biometric
         {
             return CaptureError("ClearDB", ex);
         }
+        finally
+        {
+            _deviceLock.Release();
+        }
     }
 
     public IActionResult TotalIdsInMemory()
     {
+        if (!_deviceLock.Wait(DeviceWait)) return DeviceBusy(nameof(TotalIdsInMemory));
         try
         {
             APIServiceInstance._IndexSearch.GetDataCount(out UInt32 dataCount);
@@ -380,10 +426,15 @@ public class Biometric
         {
             return CaptureError("GetDataCount", ex);
         }
+        finally
+        {
+            _deviceLock.Release();
+        }
     }
 
     public IActionResult DeviceUniqueSerialID()
     {
+        if (!_deviceLock.Wait(DeviceWait)) return DeviceBusy(nameof(DeviceUniqueSerialID));
         try
         {
             byte[] deviceId;
@@ -409,10 +460,15 @@ public class Biometric
         {
             return CaptureError("DeviceIoControl", ex);
         }
+        finally
+        {
+            _deviceLock.Release();
+        }
     }
 
     public IActionResult JoinTemplates(JsonArray fingers)
     {
+        if (!_deviceLock.Wait(DeviceWait)) return DeviceBusy(nameof(JoinTemplates));
         try
         {
             if (fingers.Count < 2) return new BadRequestObjectResult(
@@ -451,6 +507,10 @@ public class Biometric
         catch (Exception ex)
         {
             return CaptureError("CreateTemplate", ex);
+        }
+        finally
+        {
+            _deviceLock.Release();
         }
     }
 }

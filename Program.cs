@@ -3,6 +3,35 @@ using Microsoft.Extensions.Logging.Configuration;
 using Microsoft.Extensions.Logging.EventLog;
 using Microsoft.Extensions.Logging;
 
+using var singleInstance = new Mutex(true, @"Local\Fingertech-API-SingleInstance", out bool createdNew);
+if (!createdNew)
+{
+    return;
+}
+
+static void LogCrash(string source, Exception ex)
+{
+    var text = $"[{DateTime.Now:u}] {source}\n{ex}\n";
+    try
+    {
+        var logDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Fingertech-API", "logs");
+        Directory.CreateDirectory(logDir);
+        File.AppendAllText(Path.Combine(logDir, "crash.log"), text);
+    }
+    catch { }
+    try { System.Diagnostics.EventLog.WriteEntry("Biometric API Service", text, System.Diagnostics.EventLogEntryType.Error); } catch { }
+}
+
+AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+{
+    if (e.ExceptionObject is Exception ex) LogCrash("UnhandledException", ex);
+};
+TaskScheduler.UnobservedTaskException += (_, e) =>
+{
+    LogCrash("UnobservedTaskException", e.Exception);
+    e.SetObserved();
+};
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Read CORS configuration from appsettings
@@ -53,7 +82,18 @@ serviceApp.UseExceptionHandler(app => app.Run(async ctx =>
 
 serviceApp.UseRouting();
 serviceApp.UseCors("DefaultCorsPolicy");
-serviceApp.UseCors();
 serviceApp.MapControllers();
 
-serviceApp.Run();
+var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "unknown";
+serviceApp.MapGet("/apiservice", () => Results.Json(new { success = true, message = "Biometric API Service running", version }));
+serviceApp.MapGet("/apiservice/status", () => Results.Json(new { success = true, message = "Biometric API Service running", version }));
+
+try
+{
+    serviceApp.Run();
+}
+catch (Exception ex)
+{
+    LogCrash("Startup", ex);
+    Environment.Exit(1);
+}
