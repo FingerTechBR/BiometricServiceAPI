@@ -28,6 +28,29 @@ public class Biometric
         { StatusCode = 503 };
     }
 
+    private static string ErrorName(uint ret)
+    {
+        var field = typeof(NBioAPI.Error)
+            .GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .FirstOrDefault(f => f.FieldType == typeof(int)
+                && unchecked((uint)(int)f.GetRawConstantValue()!) == ret);
+        return field?.Name ?? ret.ToString();
+    }
+
+    private IActionResult SdkError(string operation, uint ret, string? message = null)
+    {
+        var name = ErrorName(ret);
+        return new BadRequestObjectResult(
+            new JsonObject
+            {
+                ["message"] = message ?? $"Error on {operation}: {name}",
+                ["errorCode"] = ret,
+                ["errorName"] = name,
+                ["success"] = false
+            }
+        );
+    }
+
     private IActionResult CaptureError(string operation, Exception ex)
     {
         try { APIServiceInstance._NBioAPI.CloseDevice(NBioAPI.Type.DEVICE_ID.AUTO); }
@@ -63,13 +86,7 @@ public class Biometric
             {
                 APIServiceInstance._NBioAPI.CloseDevice(NBioAPI.Type.DEVICE_ID.AUTO);
             }
-            if (ret != NBioAPI.Error.NONE) return new BadRequestObjectResult(
-                new JsonObject
-                {
-                    ["message"] = $"Error on Capture: {ret}",
-                    ["success"] = false
-                }
-            );
+            if (ret != NBioAPI.Error.NONE) return SdkError("Capture", ret);
 
             NBioAPI.Export NBioExport = new NBioAPI.Export(APIServiceInstance._NBioAPI);
             NBioExport.NBioBSPToImage(auditHFIR, out NBioAPI.Export.EXPORT_AUDIT_DATA exportAuditData);
@@ -164,13 +181,7 @@ public class Biometric
             {
                 APIServiceInstance._NBioAPI.CloseDevice(NBioAPI.Type.DEVICE_ID.AUTO);
             }
-            if (ret != NBioAPI.Error.NONE) return new BadRequestObjectResult(
-                new JsonObject
-                {
-                    ["message"] = $"Error on Capture: {ret}",
-                    ["success"] = false
-                }
-            );
+            if (ret != NBioAPI.Error.NONE) return SdkError("Capture", ret);
 
             APIServiceInstance._NBioAPI.GetTextFIRFromHandle(hCapturedFIR, out NBioAPI.Type.FIR_TEXTENCODE textFIR, true);
             NBioAPI.Export NBioExport = new NBioAPI.Export(APIServiceInstance._NBioAPI);
@@ -222,7 +233,9 @@ public class Biometric
             if (ret != NBioAPI.Error.NONE) return new BadRequestObjectResult(
                 new JsonObject
                 {
-                    ["message"] = ret == NBioAPI.Error.CAPTURE_TIMEOUT ? "Timeout" : $"Error on Verify: {ret}",
+                    ["message"] = ret == NBioAPI.Error.CAPTURE_TIMEOUT ? "Timeout" : $"Error on Verify: {ErrorName(ret)}",
+                    ["errorCode"] = ret,
+                    ["errorName"] = ErrorName(ret),
                     ["success"] = false
                 }
             );
@@ -285,13 +298,7 @@ public class Biometric
             {
                 APIServiceInstance._NBioAPI.CloseDevice(NBioAPI.Type.DEVICE_ID.AUTO);
             }
-            if (ret != NBioAPI.Error.NONE) return new BadRequestObjectResult(
-                new JsonObject
-                {
-                    ["message"] = $"Error on Capture: {ret}",
-                    ["success"] = false
-                }
-            );
+            if (ret != NBioAPI.Error.NONE) return SdkError("Capture", ret);
 
             NBioAPI.IndexSearch.CALLBACK_INFO_0 cbInfo = new();
             APIServiceInstance._IndexSearch.IdentifyData(hCapturedFIR, secuLevel, out NBioAPI.IndexSearch.FP_INFO fpInfo, cbInfo);
@@ -357,13 +364,7 @@ public class Biometric
             {
                 textFir.TextFIR = fingerObject["template"].ToString();
                 ret = APIServiceInstance._IndexSearch.AddFIR(textFir, (uint)fingerObject["id"], out _);
-                if (ret != NBioAPI.Error.NONE) return new BadRequestObjectResult(
-                    new JsonObject
-                    {
-                        ["message"] = $"Error on AddFIR: {ret}",
-                        ["success"] = false
-                    }
-                );
+                if (ret != NBioAPI.Error.NONE) return SdkError("AddFIR", ret);
             }
 
             return new OkObjectResult(
@@ -488,12 +489,7 @@ public class Biometric
                 NBioAPI.Type.FIR_TEXTENCODE textFIR2 = new NBioAPI.Type.FIR_TEXTENCODE() { TextFIR = list[i] };
                 APIServiceInstance._NBioAPI.CreateTemplate(textFIR1, textFIR2, out NBioAPI.Type.HFIR hNew, payload);
                 uint ret = APIServiceInstance._NBioAPI.GetTextFIRFromHandle(hNew, out NBioAPI.Type.FIR_TEXTENCODE newTextFIR, true);
-                if (ret != NBioAPI.Error.NONE) return new BadRequestObjectResult(
-                                       new JsonObject
-                                       {
-                                           ["message"] = $"Error creating template: {ret}",
-                                           ["success"] = false
-                                       });
+                if (ret != NBioAPI.Error.NONE) return SdkError("CreateTemplate", ret);
                 list[i] = newTextFIR.TextFIR;
             }
             return new OkObjectResult(
